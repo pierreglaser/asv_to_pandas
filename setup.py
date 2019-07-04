@@ -6,5 +6,5 @@ setup(name='asv_to_pandas',
       author='Pierre Glaser',
       author_email='pierreglaser@msn.com',
       packages=['asv_to_pandas'],
-      install_requires=['asv', 'pandas']
+      install_requires=['asv', 'pandas', 'git-python']
       )

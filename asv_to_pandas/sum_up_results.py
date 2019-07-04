@@ -4,10 +4,19 @@ import os
 import pathlib
 
 import pandas as pd
+import git
 
 from asv.benchmarks import Benchmarks
 from asv.config import Config
 from asv.commands.publish import Publish
+
+
+def _get_commit_to_branch_map(repository_path):
+    repo = git.Repo(repository_path)
+    hash_to_branch_map = {}
+    for h in repo.heads:
+        hash_to_branch_map[h.commit.hexsha] = h.name
+    return hash_to_branch_map
 
 
 def _remove_quotes(params):
@@ -33,7 +42,7 @@ def _find_asv_root():
     raise ValueError('Cannot find a current asv benchmark repository')
 
 
-def create_benchmark_dataframe(group_by="name"):
+def create_benchmark_dataframe(group_by="name", use_branch_names=False):
     # if we are in an asv subprocess, use ASV_CONF_DIR to load the config
     repo_dirname = os.environ.get("ASV_CONF_DIR", _find_asv_root())
     config_path = os.path.join(repo_dirname, "asv.conf.json")
@@ -65,12 +74,19 @@ def create_benchmark_dataframe(group_by="name"):
         l for l in metadata_levels if l not in levels_to_group_by
     ]
 
+    commit_to_branch_map = _get_commit_to_branch_map(config.repo)
+
     for single_env_result in Publish.iter_results(config, benchmarks):
         benchmark_metadata = {
             "version": single_env_result._params["python"],
             "commit_hash": single_env_result._commit_hash,
             "date": single_env_result._date,
         }
+        if use_branch_names:
+            benchmark_metadata["commit_hash"] = commit_to_branch_map.get(
+                benchmark_metadata["commit_hash"],
+                benchmark_metadata["commit_hash"]
+            )
 
         for b_name, params in single_env_result._benchmark_params.items():
             unquoted_params = _remove_quotes(params)
@@ -98,7 +114,19 @@ def create_benchmark_dataframe(group_by="name"):
             # this is dangerous because we there is no reason the results
             # order follow the carthesian product of the parameter space,
             # however empirically it seems to be the case
-            mi = pd.MultiIndex.from_product(unquoted_params, names=param_names)
+            params_with_infered_types = []
+            for params in unquoted_params:
+                params_with_infered_types.append(
+                    pd.to_numeric(params, errors="ignore"))
+            mi = pd.MultiIndex.from_product(
+                params_with_infered_types, names=param_names)
+            if len(single_env_result._results[b_name]) != len(mi):
+                # if a benchmarkf fails, single_env_result._results[b_name]
+                # only consists of [None]
+                _result = single_env_result._results[b_name]
+                assert _result == [None], 'unexpected benchmark result'
+                continue
+
             _results = pd.Series(single_env_result._results[b_name], index=mi)
             _results.dropna(inplace=True)
 
