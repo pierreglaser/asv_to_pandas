@@ -115,19 +115,26 @@ def create_benchmark_dataframe(group_by="name", use_branch_names=False):
             # order follow the carthesian product of the parameter space,
             # however empirically it seems to be the case
             params_with_infered_types = []
+            _results = single_env_result._results[b_name]
             for params in unquoted_params:
                 params_with_infered_types.append(
                     pd.to_numeric(params, errors="ignore"))
-            mi = pd.MultiIndex.from_product(
-                params_with_infered_types, names=param_names)
-            if len(single_env_result._results[b_name]) != len(mi):
-                # if a benchmarkf fails, single_env_result._results[b_name]
+
+            if params_with_infered_types != []:
+                mi = pd.MultiIndex.from_product(
+                    params_with_infered_types, names=param_names)
+            else:
+                # benchmark is not parametrized, make index a simple range
+                # index
+                mi = pd.RangeIndex(len(_results))
+
+            if len(_results) != len(mi):
+                # if a benchmark fails, single_env_result._results[b_name]
                 # only consists of [None]
-                _result = single_env_result._results[b_name]
-                assert _result == [None], 'unexpected benchmark result'
+                assert _results == [None], 'unexpected benchmark result'
                 continue
 
-            _results = pd.Series(single_env_result._results[b_name], index=mi)
+            _results = pd.Series(_results, index=mi)
             _results.dropna(inplace=True)
 
             results[values_to_group_by][values_to_concat_on] = _results
